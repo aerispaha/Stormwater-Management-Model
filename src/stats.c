@@ -6,6 +6,8 @@
 //   Date:     03/20/14   (Build 5.1.001)
 //             09/15/14   (Build 5.1.007)
 //             03/19/15   (Build 5.1.008)
+//             08/01/16   (Build 5.1.011)
+//             03/14/17   (Build 5.1.012)
 //   Author:   L. Rossman (EPA)
 //             R. Dickinson (CDM)
 //
@@ -20,6 +22,14 @@
 //   - OpenMP parallelization applied to updating node and link flow statistics.
 //   - Updating of time that conduit is upstrm/dnstrm full was modified.
 //
+//   Build 5.1.011:
+//   - Surcharging is now evaluated only under dynamic wave flow routing and
+//     storage nodes cannot be classified as surcharged.
+//
+//   Build 5.1.012:
+//   - Time step statistics now evaluated only in non-steady state periods.
+//   - Check for full conduit flow now accounts for number of barrels.
+//
 //-----------------------------------------------------------------------------
 #define _CRT_SECURE_NO_DEPRECATE
 
@@ -27,6 +37,7 @@
 #include <math.h>
 #include <omp.h>                                                               //(5.1.008)
 #include "headers.h"
+#include "swmm5.h"
 
 //-----------------------------------------------------------------------------
 //  Shared variables
@@ -425,20 +436,27 @@ void   stats_updateFlowStats(double tStep, DateTime aDate, int stepCount,
         stats_updateLinkStats(j, tStep, aDate);
 }
 
-    // --- update time step stats
-    //     (skip initial time step for min. value)
-    if ( OldRoutingTime > 0 )                                                  //(5.1.008)
-    {
-        SysStats.minTimeStep = MIN(SysStats.minTimeStep, tStep);
-    }
-    SysStats.avgTimeStep += tStep;
-    SysStats.maxTimeStep = MAX(SysStats.maxTimeStep, tStep);
-
-    // --- update iteration step count stats
-    SysStats.avgStepCount += stepCount;
+////  Following code segment modified for release 5.1.012.  ////               //(5.1.012)
 
     // --- update count of times in steady state
     SysStats.steadyStateCount += steadyState;
+
+    // --- update time step stats if not in steady state
+	if ( steadyState == FALSE )
+	{
+        // --- skip initial time step for min. value)
+        if ( OldRoutingTime > 0 )
+        {
+            SysStats.minTimeStep = MIN(SysStats.minTimeStep, tStep);
+        }
+        SysStats.avgTimeStep += tStep;
+        SysStats.maxTimeStep = MAX(SysStats.maxTimeStep, tStep);
+
+        // --- update iteration step count stats
+        SysStats.avgStepCount += stepCount;
+	}
+
+////
 
     // --- update max. system outfall flow
     MaxOutfallFlow = MAX(MaxOutfallFlow, SysOutfallFlow);
@@ -495,7 +513,11 @@ void stats_updateNodeStats(int j, double tStep, DateTime aDate)
                 MAX(NodeStats[j].maxPondedVol,
                     (newVolume - Node[j].fullVolume));
         }
-        if ( newDepth + Node[j].invertElev + FUDGE >= Node[j].crownElev )
+
+        // --- for dynamic wave routing, classify a non-storage node as        //(5.1.011)
+        //     surcharged if its water level exceeds its crown elev.           //(5.1.011)
+        if ( RouteModel == DW && Node[j].type != STORAGE &&                    //(5.1.011)
+             newDepth + Node[j].invertElev + FUDGE >= Node[j].crownElev )
         {
             NodeStats[j].timeSurcharged += tStep;
         }
@@ -636,7 +658,8 @@ void  stats_updateLinkStats(int j, double tStep, DateTime aDate)
 
         // --- update time conduit is full
         k = Link[j].subIndex;
-        if ( q >= Link[j].qFull ) LinkStats[j].timeFullFlow += tStep; 
+        if ( q >= Link[j].qFull * (double)Conduit[k].barrels )                 //(5.1.012)
+            LinkStats[j].timeFullFlow += tStep; 
         if ( Conduit[k].capacityLimited )
             LinkStats[j].timeCapacityLimited += tStep;
 
@@ -765,3 +788,259 @@ void  stats_updateMaxStats(TMaxStats maxStats[], int i, int j, double x)
 }
 
 //=============================================================================
+//
+int stats_getNodeStat(int index, TNodeStats *nodeStats)
+//
+// Input:    index
+//           element = element to return
+// Return:   value
+// Purpose:  Gets a Node Stat for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	// Check if object index is within bounds
+	else if (index < 0 || index >= Nobjects[NODE])
+	{
+		errorcode = ERR_API_OBJECT_INDEX;
+	}
+
+	else
+	{
+		memcpy(nodeStats, &NodeStats[index], sizeof(TNodeStats));
+	}
+	return errorcode;
+}
+
+int stats_getStorageStat(int index, TStorageStats *storageStats)
+//
+// Input:    subindex
+//           element = element to return
+// Return:   value
+// Purpose:  Gets a Storage Stat for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	// Check if object index is within bounds
+	else if (index < 0 || index >= Nobjects[NODE])
+	{
+		errorcode = ERR_API_OBJECT_INDEX;
+	}
+
+	// Check Node Type is storage
+	else if (Node[index].type != STORAGE)
+	{
+		errorcode = ERR_API_WRONG_TYPE;
+	}
+
+	else
+	{
+		// fetch sub index
+		int k = Node[index].subIndex;
+		// Copy Structure
+		memcpy(storageStats, &StorageStats[k], sizeof(TStorageStats));
+	}
+	return errorcode;
+}
+
+int stats_getOutfallStat(int index, TOutfallStats *outfallStats)
+//
+// Input:    subindex
+//           element = element to return
+// Return:   value
+// Purpose:  Gets a Outfall Stat for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	// Check if object index is within bounds
+	else if (index < 0 || index >= Nobjects[NODE])
+	{
+		errorcode = ERR_API_OBJECT_INDEX;
+	}
+
+	// Check Node Type is outfall
+	else if (Node[index].type != OUTFALL)
+	{
+		errorcode = ERR_API_WRONG_TYPE;
+	}
+
+	else
+	{
+		// fetch sub index
+		int k = Node[index].subIndex;
+		// Copy Structure
+		memcpy(outfallStats, &OutfallStats[k], sizeof(TOutfallStats));
+		
+		// Perform Deep Copy of Pollutants Results
+		if (Nobjects[POLLUT] > 0)
+		{
+			outfallStats->totalLoad =
+				(double *)calloc(Nobjects[POLLUT], sizeof(double));
+			if (!outfallStats->totalLoad)
+			{
+				errorcode = ERR_MEMORY;
+			}
+			if (errorcode == 0)
+			{
+				for (k = 0; k < Nobjects[POLLUT]; k++)
+					outfallStats->totalLoad[k] = OutfallStats[k].totalLoad[k];
+			}
+		}
+		else outfallStats->totalLoad = NULL;
+	}
+	return errorcode;
+}
+
+int stats_getLinkStat(int index, TLinkStats *linkStats)
+//
+// Input:    index
+//           element = element to return
+// Return:   value
+// Purpose:  Gets a Link Stat for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	// Check if object index is within bounds
+	else if (index < 0 || index >= Nobjects[LINK])
+	{
+		errorcode = ERR_API_OBJECT_INDEX;
+	}
+
+	else
+	{
+		// Copy Structure
+		memcpy(linkStats, &LinkStats[index], sizeof(TLinkStats));
+	}
+	return errorcode;
+}
+
+int stats_getPumpStat(int index, TPumpStats *pumpStats)
+//
+// Input:    subindex
+//           element = element to return
+// Return:   value
+// Purpose:  Gets a Pump Stat for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	// Check if object index is within bounds
+	else if (index < 0 || index >= Nobjects[LINK])
+	{
+		errorcode = ERR_API_OBJECT_INDEX;
+	}
+	
+	// Check if pump
+	else if (Link[index].type != PUMP)
+	{
+		errorcode = ERR_API_WRONG_TYPE;
+	}
+
+	else
+	{
+		// fetch sub index
+		int k = Link[index].subIndex;
+		// Copy Structure
+		memcpy(pumpStats, &PumpStats[k], sizeof(TPumpStats));
+	}
+	return errorcode;
+}
+
+int stats_getSubcatchStat(int index, TSubcatchStats *subcatchStats)
+//
+// Input:    index
+//           element = element to return
+// Return:   value
+// Purpose:  Gets a Subcatchment Stat for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	// Check if object index is within bounds
+	else if (index < 0 || index >= Nobjects[SUBCATCH])
+	{
+		errorcode = ERR_API_OBJECT_INDEX;
+	}
+
+	else
+	{
+		// Copy Structure
+		memcpy(subcatchStats, &SubcatchStats[index], sizeof(TSubcatchStats));
+	}
+	return errorcode;
+}

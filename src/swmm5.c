@@ -5,6 +5,8 @@
 //   Version:  5.1
 //   Date:     03/19/14  (Build 5.1.001)
 //             03/19/15  (Build 5.1.008)
+//             08/01/16  (Build 5.1.011)
+//             03/14/17  (Build 5.1.012)
 //   Author:   L. Rossman
 //
 //   This is the main module of the computational engine for Version 5 of
@@ -22,6 +24,18 @@
 //   - Hot start file now read before routing system opened.
 //   - Final routing step adjusted so that total duration not exceeded.
 //
+//   Build 5.1.011:
+//   - Made sure that MS exception handling only used with MS C compiler.
+//   - Added name of module handling an exception to error report.
+//   - Elapsed simulation time now saved to new global variable ElaspedTime.
+//   - Added swmm_getError() function that retrieves error code and message.
+//   - Changed WarningCode to Warnings (# warnings issued).
+//   - Added swmm_getWarnings() function to retrieve value of Warnings.
+//   - Fixed error code returned on swmm_xxx functions.
+//
+//   Build 5.1.012:
+//   - #include <direct.h> only used when compiled for Windows.
+//     
 //-----------------------------------------------------------------------------
 #define _CRT_SECURE_NO_DEPRECATE
 
@@ -31,7 +45,7 @@
 //**********************************************************
 //#define CLE     /* Compile as a command line executable */
 //#define SOL     /* Compile as a shared object library */
-#define DLL     /* Compile as a Windows DLL */
+//#define DLL     /* Compile as a Windows DLL */
 
 // --- define WINDOWS
 #undef WINDOWS
@@ -42,25 +56,32 @@
   #define WINDOWS
 #endif
 
-////  ---- following section modified for release 5.1.008.  ////               //(5.1.008)
+////  ---- following section modified for release 5.1.011.  ////               //(5.1.011)
 ////
 // --- define EXH (MS Windows exception handling)
 #undef EXH         // indicates if exception handling included
 #ifdef WINDOWS
-  #ifndef __MINGW32__ 
-      #define EXH
+  #ifdef _MSC_VER
+    #define EXH
+  #endif
+
+  // Use alias of methods unavailable before VS2015
+  #if _MSC_VER < 1900
+    #define snprintf _snprintf
   #endif
 #endif
+
 
 // --- include Windows & exception handling headers
 #ifdef WINDOWS
   #include <windows.h>
-  #include <direct.h>
+  #include <direct.h>                                                          //(5.1.012)
 #endif
 #ifdef EXH
   #include <excpt.h>
 #endif
 ////
+
 
 // --- define DLLEXPORT
 
@@ -152,11 +173,11 @@ static int  DoRouting;            // TRUE if flow routing is computed
 //-----------------------------------------------------------------------------
 //  Local functions
 //-----------------------------------------------------------------------------
-static void execRouting(DateTime elapsedTime);
+static void execRouting(void);                                                 //(5.1.011)
 
 // Exception filtering function
-#ifdef WINDOWS
-static int  xfilter(int xc, DateTime elapsedTime, long step);
+#ifdef EXH                                                                     //(5.1.011)
+static int  xfilter(int xc, char* module, double elapsedTime, long step);      //(5.1.011)
 #endif
 
 //-----------------------------------------------------------------------------
@@ -175,12 +196,20 @@ int  main(int argc, char *argv[])
 //  f3 = name of binary output file if saved (or blank if not saved).
 //
 {
-    char *inputFile;
-    char *reportFile;
-    char *binaryFile;
+	char *inputFile;
+	char *reportFile;
+	char *binaryFile;
+	char *arg1;
     char blank[] = "";
+	char SEMVERSION[SEMVERSION_LEN];
+	
+	// Fetch SWMM Engine Version
+	getSemVersion(SEMVERSION);
+
     time_t start;
     double runTime;
+
+	start = time(0);
 
     // --- initialize flags
     IsOpenFlag = FALSE;
@@ -188,8 +217,35 @@ int  main(int argc, char *argv[])
     SaveResultsFlag = TRUE;
 
     // --- check for proper number of command line arguments
-    start = time(0);
-    if (argc < 3) writecon(FMT01);
+	if (argc == 1)
+	{
+		writecon("\nNot Enough Arguments (See Help --help)\n\n");
+	}
+	else if (argc == 2)
+	{
+		// --- extract first argument
+		arg1 = argv[1];
+
+		if (strcmp(arg1, "--help") == 0 || strcmp(arg1, "-h") == 0)
+		{
+			// Help
+			writecon("\n\nSTORMWATER MANAGEMENT MODEL (SWMM5) HELP\n\n");
+			writecon("COMMANDS:\n");
+			writecon("\t--help (-h)       Help Docs\n");
+			writecon("\t--version (-v)    Build Version\n");
+			sprintf(Msg, "\nRUNNING A SIMULATION:\n%s\n\n\n", FMT01);
+			writecon(Msg);
+		}
+		else if (strcmp(arg1, "--version") == 0 || strcmp(arg1, "-v") == 0)
+		{
+			// Output version number
+			writecon(SEMVERSION);
+		}
+		else
+		{
+			writecon("\nUnknown Argument (See Help --help)\n\n");
+		}
+	}
     else
     {
         // --- extract file names from command line arguments
@@ -197,7 +253,9 @@ int  main(int argc, char *argv[])
         reportFile = argv[2];
         if (argc > 3) binaryFile = argv[3];
         else          binaryFile = blank;
-        writecon(FMT02);
+        
+		sprintf(Msg, "\n... EPA-SWMM 5.1 (Build %s)\n", SEMVERSION);
+		writecon(Msg);
 
         // --- run SWMM
         swmm_run(inputFile, reportFile, binaryFile);
@@ -207,7 +265,7 @@ int  main(int argc, char *argv[])
         sprintf(Msg, "\n\n... EPA-SWMM completed in %.2f seconds.", runTime);
         writecon(Msg);
         if      ( ErrorCode   ) writecon(FMT03);
-        else if ( WarningCode ) writecon(FMT04);
+        else if ( Warnings    ) writecon(FMT04);                               //(5.1.011)
         else                    writecon(FMT05);
     }
 
@@ -234,7 +292,7 @@ int DLLEXPORT  swmm_run(char* f1, char* f2, char* f3)
 {
     long newHour, oldHour = 0;
     long theDay, theHour;
-    DateTime elapsedTime = 0.0;
+    double elapsedTime = 0.0;                                                  //(5.1.011)
 
     // --- open the files & read input data
     ErrorCode = 0;
@@ -279,7 +337,7 @@ int DLLEXPORT  swmm_run(char* f1, char* f2, char* f3)
 
     // --- close the system
     swmm_close();
-    return ErrorCode;
+    return error_getCode(ErrorCode);                                           //(5.1.011)
 }
 
 //=============================================================================
@@ -293,33 +351,38 @@ int DLLEXPORT swmm_open(char* f1, char* f2, char* f3)
 //  Purpose: opens a SWMM project.
 //
 {
-#ifdef DLL
-   _fpreset();              
-#endif
 
-#ifdef EXH
-    // --- begin exception handling here
-    __try
-#endif
+	#ifndef __unix__
+	#ifdef DLL
+	   _fpreset();              
+	#endif
+	#endif
+
+	#ifdef EXH                                                                     //(5.1.011)
+		// --- begin exception handling here
+		_fpreset();
+		__try
+	#endif
     {
         // --- initialize error & warning codes
         datetime_setDateFormat(M_D_Y);
         ErrorCode = 0;
-        WarningCode = 0;
+        strcpy(ErrorMsg, "");
+        Warnings = 0;
         IsOpenFlag = FALSE;
         IsStartedFlag = FALSE;
         ExceptionCount = 0;
 
         // --- open a SWMM project
         project_open(f1, f2, f3);
-        if ( ErrorCode ) return ErrorCode;
+        if ( ErrorCode ) return error_getCode(ErrorCode);                      //(5.1.011)
         IsOpenFlag = TRUE;
         report_writeLogo();
         writecon(FMT06);
 
         // --- retrieve project data from input file
         project_readInput();
-        if ( ErrorCode ) return ErrorCode;
+        if ( ErrorCode ) return error_getCode(ErrorCode);                      //(5.1.011)
 
         // --- write project title to report file & validate data
         report_writeTitle();
@@ -329,14 +392,14 @@ int DLLEXPORT swmm_open(char* f1, char* f2, char* f3)
         if ( RptFlags.input ) inputrpt_writeInput();
     }
 
-#ifdef EXH
+#ifdef EXH                                                                     //(5.1.011)
     // --- end of try loop; handle exception here
-    __except(xfilter(GetExceptionCode(), 0.0, 0))
+    __except(xfilter(GetExceptionCode(), "swmm_open", 0.0, 0))                 //(5.1.011)
     {
         ErrorCode = ERR_SYSTEM;
     }
 #endif
-    return ErrorCode;
+    return error_getCode(ErrorCode);                                           //(5.1.011)
 }
 
 //=============================================================================
@@ -349,19 +412,25 @@ int DLLEXPORT swmm_start(int saveResults)
 //
 {
     // --- check that a project is open & no run started
-    if ( ErrorCode ) return ErrorCode;
+    if ( ErrorCode ) return error_getCode(ErrorCode);                          //(5.1.011)
     if ( !IsOpenFlag || IsStartedFlag )
     {
         report_writeErrorMsg(ERR_NOT_OPEN, "");
-        return ErrorCode;
+        return error_getCode(ErrorCode);                                       //(5.1.011)
     }
+
+    // --- save saveResults flag to global variable                            //(5.1.011)
+    SaveResultsFlag = saveResults;                                             //(5.1.011)
     ExceptionCount = 0;
 
-#ifdef EXH
+#ifdef EXH                                                                     //(5.1.011)
     // --- begin exception handling loop here
     __try
 #endif
     {
+        // --- initialize elapsed time in decimal days                         //(5.1.011)
+        ElapsedTime = 0.0;                                                     //(5.1.011)
+
         // --- initialize runoff, routing & reporting time (in milliseconds)
         NewRunoffTime = 0.0;
         NewRoutingTime = 0.0;
@@ -379,7 +448,7 @@ int DLLEXPORT swmm_start(int saveResults)
         // --- open rainfall processor (creates/opens a rainfall
         //     interface file and generates any RDII flows)
         if ( !IgnoreRainfall ) rain_open();
-        if ( ErrorCode ) return ErrorCode;
+        if ( ErrorCode ) return error_getCode(ErrorCode);                      //(5.1.011)
 
         // --- initialize state of each major system component
         project_init();
@@ -414,21 +483,18 @@ int DLLEXPORT swmm_start(int saveResults)
 ////
     }
 
-#ifdef EXH
+#ifdef EXH                                                                     //(5.1.011)
     // --- end of try loop; handle exception here
-    __except(xfilter(GetExceptionCode(), 0.0, 0))
+    __except(xfilter(GetExceptionCode(), "swmm_start", 0.0, 0))                //(5.1.011)
     {
         ErrorCode = ERR_SYSTEM;
     }
 #endif
-
-    // --- save saveResults flag to global variable
-    SaveResultsFlag = saveResults;    
-    return ErrorCode;
+    return error_getCode(ErrorCode);                                           //(5.1.011)
 }
 //=============================================================================
 
-int DLLEXPORT swmm_step(DateTime* elapsedTime)
+int DLLEXPORT swmm_step(double* elapsedTime)                                   //(5.1.011)
 //
 //  Input:   elapsedTime = current elapsed time in decimal days
 //  Output:  updated value of elapsedTime,
@@ -437,14 +503,14 @@ int DLLEXPORT swmm_step(DateTime* elapsedTime)
 //
 {
     // --- check that simulation can proceed
-    if ( ErrorCode ) return ErrorCode;
+    if ( ErrorCode ) return error_getCode(ErrorCode);                          //(5.1.011)
     if ( !IsOpenFlag || !IsStartedFlag  )
     {
         report_writeErrorMsg(ERR_NOT_OPEN, "");
-        return ErrorCode;
+        return error_getCode(ErrorCode);                                       //(5.1.011)
     }
 
-#ifdef EXH
+#ifdef EXH                                                                     //(5.1.011)
     // --- begin exception handling loop here
     __try
 #endif
@@ -455,7 +521,7 @@ int DLLEXPORT swmm_step(DateTime* elapsedTime)
             // --- route flow & WQ through drainage system
             //     (runoff will be calculated as needed)
             //     (NewRoutingTime is updated)
-            execRouting(*elapsedTime);
+            execRouting();                                                     //(5.1.011)
         }
 
         // --- save results at next reporting time
@@ -468,28 +534,29 @@ int DLLEXPORT swmm_step(DateTime* elapsedTime)
         // --- update elapsed time (days)
         if ( NewRoutingTime < TotalDuration )
         {
-            *elapsedTime = NewRoutingTime / MSECperDAY;
+            ElapsedTime = NewRoutingTime / MSECperDAY;                         //(5.1.011)
         }
 
         // --- otherwise end the simulation
-        else *elapsedTime = 0.0;
+        else ElapsedTime = 0.0;                                                //(5.1.011)
+        *elapsedTime = ElapsedTime;                                            //(5.1.011)
     }
 
-#ifdef EXH
+#ifdef EXH                                                                     //(5.1.011)
     // --- end of try loop; handle exception here
-    __except(xfilter(GetExceptionCode(), *elapsedTime, StepCount))
+    __except(xfilter(GetExceptionCode(), "swmm_step", ElapsedTime, StepCount)) //(5.1.011)
     {
         ErrorCode = ERR_SYSTEM;
     }
 #endif
-    return ErrorCode;
+    return error_getCode(ErrorCode);                                           //(5.1.011)
 }
 
 //=============================================================================
 
-void execRouting(DateTime elapsedTime)
+void execRouting()                                                             //(5.1.011)
 //
-//  Input:   elapsedTime = current elapsed time in decimal days
+//  Input:   none                                                              //(5.1.011)
 //  Output:  none
 //  Purpose: routes flow & WQ through drainage system over a single time step.
 //
@@ -497,7 +564,7 @@ void execRouting(DateTime elapsedTime)
     double   nextRoutingTime;          // updated elapsed routing time (msec)
     double   routingStep;              // routing time step (sec)
 
-#ifdef EXH
+#ifdef EXH                                                                     //(5.1.011)
     // --- begin exception handling loop here
     __try
 #endif
@@ -540,9 +607,10 @@ void execRouting(DateTime elapsedTime)
         else NewRoutingTime = nextRoutingTime;
     }
 
-#ifdef EXH
+#ifdef EXH                                                                     //(5.1.011)
     // --- end of try loop; handle exception here
-    __except(xfilter(GetExceptionCode(), elapsedTime, StepCount))
+    __except(xfilter(GetExceptionCode(), "execRouting",                        //(5.1.011)
+                     ElapsedTime, StepCount))                                  //(5.1.011)
     {
         ErrorCode = ERR_SYSTEM;
         return;
@@ -563,7 +631,7 @@ int DLLEXPORT swmm_end(void)
     if ( !IsOpenFlag )
     {
         report_writeErrorMsg(ERR_NOT_OPEN, "");
-        return ErrorCode;
+        return error_getCode(ErrorCode);                                       //(5.1.011)
     }
 
     if ( IsStartedFlag )
@@ -587,7 +655,7 @@ int DLLEXPORT swmm_end(void)
         hotstart_close();
         IsStartedFlag = FALSE;
     }
-    return ErrorCode;
+    return error_getCode(ErrorCode);                                           //(5.1.011)
 }
 
 //=============================================================================
@@ -606,7 +674,7 @@ int DLLEXPORT swmm_report()
         writecon(FMT07);
         report_writeReport();
     }
-    return ErrorCode;
+    return error_getCode(ErrorCode);                                           //(5.1.011)
 }
 
 //=============================================================================
@@ -669,10 +737,73 @@ int  DLLEXPORT swmm_getVersion(void)
 //           uses a format of xyzzz where x = major version number,
 //           y = minor version number, and zzz = build number.
 //
+//  NOTE: Each New Release should be updated in consts.h
+//        THIS FUNCTION WILL EVENTUALLY BE DEPRECATED 
 {
     return VERSION;
 }
 
+void DLLEXPORT swmm_getSemVersion(char* semver)
+//
+//  Output: Returns Semantic Version
+//  Purpose: retrieves the current semantic version
+//  
+//  NOTE: Each New Release should be updated in consts.h
+{
+	getSemVersion(semver);
+}
+
+void DLLEXPORT swmm_getVersionInfo(char* major, char* minor, char* patch)
+//
+//  Output: Returns Semantic Version Info
+//  Purpose: retrieves the current semantic version
+//  
+//  NOTE: Each New Release should be updated in consts.h
+{
+	strncpy(major, SEMVERSION_MAJOR, sizeof SEMVERSION_MAJOR);
+	strncpy(minor, SEMVERSION_MINOR, sizeof SEMVERSION_MINOR);
+	strncpy(patch, SEMVERSION_PATCH, sizeof SEMVERSION_PATCH);
+}
+
+//=============================================================================
+
+////  New function added to release 5.1.011.  ////                             //(5.1.011)
+
+int DLLEXPORT swmm_getWarnings(void)
+//
+//  Input:  none
+//  Output: returns number of warning messages issued.
+//  Purpose: retireves number of warning messages issued during an analysis.
+{
+    return Warnings;
+}
+
+//=============================================================================
+
+////  New function added to release 5.1.011.  ////                             //(5.1.011)
+
+int  DLLEXPORT swmm_getError(char* errMsg, int msgLen)
+//
+//  Input:   errMsg = character array to hold error message text
+//           msgLen = maximum size of errMsg
+//  Output:  returns error message code number and text of error message.
+//  Purpose: retrieves the code number and text of the error condition that
+//           caused SWMM to abort its analysis.
+{
+    size_t errMsgLen = msgLen;
+
+    // --- copy text of last error message into errMsg
+    if ( ErrorCode > 0 && strlen(ErrorMsg) == 0 ) sstrncpy(errMsg, "", 1);
+    else
+    {
+	    errMsgLen = MIN(errMsgLen, strlen(ErrorMsg));
+	    errMsg = sstrncpy(errMsg, ErrorMsg, errMsgLen);
+    }
+
+    // --- remove leading line feed from errMsg
+    if ( errMsgLen > 0 && errMsg[0] == '\n' ) errMsg[0] = ' ';
+    return error_getCode(ErrorCode);                                           //(5.1.011)
+}
 
 //=============================================================================
 //   General purpose functions
@@ -819,23 +950,23 @@ void  writecon(char *s)
 //
 {
 #ifdef CLE 
-   //fprintf(stdout,s);
-   fprintf(stdout,"%c", *s);
+   fprintf(stdout,s);
    fflush(stdout);
 #endif
 }
 
 //=============================================================================
 
-#ifdef WINDOWS
-int xfilter(int xc, DateTime elapsedTime, long step)
+#ifdef EXH                                                                     //(5.1.011)
+int xfilter(int xc, char* module, double elapsedTime, long step)               //(5.1.011)
 //
 //  Input:   xc          = exception code
+//           module      = name of code module where exception was handled     //(5.1.011)
 //           elapsedTime = simulation time when exception occurred (days)
 //           step        = step count at time when exception occurred
 //  Output:  returns an exception handling code
 //  Purpose: exception filtering routine for operating system exceptions
-//           under Windows.
+//           under Windows and the Microsoft C compiler.
 //
 {
     int  rc;                           // result code
@@ -885,7 +1016,8 @@ int xfilter(int xc, DateTime elapsedTime, long step)
         rc = EXCEPTION_EXECUTE_HANDLER;
     }
     hour = (long)(elapsedTime / 1000.0 / 3600.0);
-    sprintf(xmsg, "%s at step %d, hour %d", msg, step, hour);
+    sprintf(xmsg, "%sin module %s at step %d, hour %d",                        //(5.1.011)
+            msg, module, step, hour);                                          //(5.1.011)
     if ( rc == EXCEPTION_EXECUTE_HANDLER ||
          ++ExceptionCount >= MAX_EXCEPTIONS )
     {
@@ -906,6 +1038,7 @@ int swmm_IsOpenFlag()
 	return IsOpenFlag;
 }
 
+
 int swmm_IsStartedFlag()
 //
 // Check if Simulation has started
@@ -913,3 +1046,17 @@ int swmm_IsStartedFlag()
 	// TRUE if a simulation has been started
 	return IsStartedFlag;
 }
+
+
+void getSemVersion(char* semver)
+//
+//  Output: Returns Semantic Version
+//  Purpose: retrieves the current semantic version
+//  
+//  NOTE: Each New Release should be updated in consts.h
+{
+	snprintf(semver, SEMVERSION_LEN, "%s.%s.%s\n", 
+		SEMVERSION_MAJOR, SEMVERSION_MINOR, SEMVERSION_PATCH);
+}
+
+//=============================================================================

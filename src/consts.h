@@ -4,6 +4,7 @@
 //   Project: EPA SWMM5
 //   Version: 5.1
 //   Date:    03/20/14  (Build 5.1.001)
+//            08/01/16  (Build 5.1.011)
 //   Author:  L. Rossman
 //
 //   Various Constants
@@ -13,7 +14,13 @@
 // General Constants
 //------------------
 
-#define   VERSION            51000
+// Update VERSION and SEMVERSION Simultaneously 
+#define   VERSION            52000          // Eventually will be deprecated. 
+#define   SEMVERSION_MAJOR   "5"            // Major Semantic Version
+#define   SEMVERSION_MINOR   "2"            // Minor Semantic Version
+#define   SEMVERSION_PATCH   "0.dev0"      // Patch Semantic Version
+#define   SEMVERSION_LEN     20             // Version String Len
+
 #define   MAGICNUMBER        516114522
 #define   EOFMARK            0x1A           // Use 0x04 for UNIX systems
 #define   MAXTITLE           3              // Max. # title lines

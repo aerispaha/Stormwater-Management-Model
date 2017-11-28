@@ -14,3 +14,10 @@
 /Makefile_LINUX_WORKS_openmp.txt
 /target
 *.zip
+
+# Build files
+/build/
+*.o
+
+
+*.orig

@@ -7,6 +7,8 @@
 //             09/15/14  (Build 5.1.007)
 //             04/02/15  (Build 5.1.008)
 //             08/05/15  (Build 5.1.010)
+//             08/01/16  (Build 5.1.011)
+//             03/14/17  (Build 5.1.012)
 //   Author:   L. Rossman (EPA)
 //             M. Tryby (EPA)
 //
@@ -25,12 +27,19 @@
 //   Build 5.1.010:
 //   - Remaining pollutant mass in "dry" elements now added to final storage.
 //
+//   Build 5.1.011:
+//   - Final stored pollutant mass in links ignored for Steady Flow routing.
+//
+//   Build 5.1.012:
+//   - Terminal storage nodes no longer treated as non-storage terminal
+//     nodes are when updating total outflow volume.
 //-----------------------------------------------------------------------------
 #define _CRT_SECURE_NO_DEPRECATE
 
 #include <stdlib.h>
 #include <math.h>
 #include "headers.h"
+#include "swmm5.h"
 
 //-----------------------------------------------------------------------------
 //  Constants   
@@ -86,10 +95,8 @@ double   TotalArea;               // total drainage area (ft2)
 double massbal_getBuildup(int pollut);
 double massbal_getStorage(char isFinalStorage);
 double massbal_getStoredMass(int pollut);
-double massbal_getRunoffError(void);
 double massbal_getLoadingError(void);
 double massbal_getGwaterError(void);
-double massbal_getFlowError(void);
 double massbal_getQualError(void);
 
 
@@ -637,7 +644,8 @@ void massbal_updateRoutingTotals(double tStep)
     for ( j = 0; j < Nobjects[NODE]; j++)
     {
         NodeInflow[j] += Node[j].inflow * tStep;
-        if ( Node[j].type == OUTFALL || Node[j].degree == 0 )
+        if ( Node[j].type == OUTFALL || 
+            (Node[j].degree == 0 && Node[j].type != STORAGE) )                 //(5.1.012)
         {
             NodeOutflow[j] += Node[j].inflow * tStep;
         }
@@ -1068,7 +1076,7 @@ double massbal_getStoredMass(int p)
         storedMass += Node[j].newVolume * Node[j].newQual[p];
 
     // --- get mass stored in links (except for Steady Flow routing)
-//    if ( RouteModel != SF )
+    if ( RouteModel != SF )                                                    //(5.1.011)
     {
         for (j = 0; j < Nobjects[LINK]; j++)
             storedMass += Link[j].newVolume * Link[j].newQual[p];
@@ -1077,3 +1085,68 @@ double massbal_getStoredMass(int p)
 }
 
 //=============================================================================
+
+int massbal_getRoutingFlowTotal(TRoutingTotals *RoutingTotal)
+//
+// Input:    element = element to return
+// Return:   value
+// Purpose:  Gets the routing total for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	else
+	{
+		memcpy(RoutingTotal, &FlowTotals, sizeof(TRoutingTotals));
+	}
+
+	return errorcode;
+}
+
+int massbal_getRunoffTotal(TRunoffTotals *runoffTot)
+//
+// Input:    element = element to return
+// Return:   value
+// Purpose:  Gets the runoff total for toolkitAPI
+//
+{
+	int errorcode = 0;
+
+	// Check if Open
+	if (swmm_IsOpenFlag() == FALSE)
+	{
+		errorcode = ERR_API_INPUTNOTOPEN;
+	}
+
+	// Check if Simulation is Running
+	else if (swmm_IsStartedFlag() == FALSE)
+	{
+		errorcode = ERR_API_SIM_NRUNNING;
+	}
+
+	else
+	{
+		memcpy(runoffTot, &RunoffTotals, sizeof(TRunoffTotals));
+	}
+	return errorcode;
+}
+
+double massbal_getTotalArea(void)
+//
+// Return: Total Area for Runoff Surface
+// Purpose: Used for Toolkit API Unit Conversion
+{
+	return TotalArea;
+}

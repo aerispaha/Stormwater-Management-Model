@@ -4,11 +4,13 @@
 //   Project: EPA SWMM5
 //   Version: 5.1
 //   Date:    03/24/14  (Build 5.1.001)
+//            08/01/16  (Build 5.1.011)
 //   Author:  L. Rossman
 //
 //   Prototypes for SWMM5 functions exported to swmm5.dll.
 //
 //-----------------------------------------------------------------------------
+
 #ifndef SWMM5_H
 #define SWMM5_H
 
@@ -53,6 +55,10 @@ int  DLLEXPORT   swmm_getMassBalErr(float* runoffErr, float* flowErr,
                  float* qualErr);
 int  DLLEXPORT   swmm_close(void);
 int  DLLEXPORT   swmm_getVersion(void);
+void DLLEXPORT   swmm_getSemVersion(char* semver);
+void DLLEXPORT   swmm_getVersionInfo(char* major, char* minor, char* patch);
+int  DLLEXPORT   swmm_getError(char* errMsg, int msgLen);                      //(5.1.011)
+int  DLLEXPORT   swmm_getWarnings(void);                                       //(5.1.011)
 
 int  swmm_IsOpenFlag(void);
 int  swmm_IsStartedFlag(void);

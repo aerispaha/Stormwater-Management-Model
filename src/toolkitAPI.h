@@ -10,6 +10,8 @@
 //
 //-----------------------------------------------------------------------------
 
+#include <math.h>
+
 //#ifndef DLLEXPORT
 #ifdef WINDOWS
 	#ifdef __MINGW32__
@@ -28,6 +30,8 @@ extern "C" {
 #endif 
 
 #define _CRT_SECURE_NO_DEPRECATE
+
+void DLLEXPORT swmm_getAPIError(int errcode, char *s);
 
 // Input API Exportable Functions
 int DLLEXPORT  swmm_getSimulationUnit(int type, int *value);
@@ -54,16 +58,27 @@ int DLLEXPORT  swmm_getLinkDirection(int index, signed char *value);
 int DLLEXPORT  swmm_getSubcatchParam(int index, int Param, double *value);
 int DLLEXPORT  swmm_setSubcatchParam(int index, int Param, double value);
 // 
-int DLLEXPORT  swmm_getSimulationDateTime(int timetype, char *dtimestr);
+int DLLEXPORT swmm_getSimulationDateTime(int timetype, int *year, int *month, int *day,
+	int *hour, int *minute, int *seconds);
 int DLLEXPORT  swmm_setSimulationDateTime(int timetype, char *dtimestr);
 
 //-------------------------------
 // Active Simulation Results API
 //-------------------------------
 int DLLEXPORT swmm_getCurrentDateTimeStr(char *dtimestr);
-int DLLEXPORT swmm_getNodeResult(int index, int type, double *result);
-int DLLEXPORT swmm_getLinkResult(int index, int type, double *result);
-int DLLEXPORT swmm_getSubcatchResult(int index, int type, double *result);
+
+int DLLEXPORT swmm_getNodeStats(int index, TNodeStats *nodeStats);
+int DLLEXPORT swmm_getStorageStats(int index, TStorageStats *storageStats);
+int DLLEXPORT swmm_getOutfallStats(int index, TOutfallStats *outfallStats);
+void DLLEXPORT swmm_freeOutfallStats(TOutfallStats *outfallStats);
+
+int DLLEXPORT swmm_getLinkStats(int index, TLinkStats *linkStats);
+int DLLEXPORT swmm_getPumpStats(int index, TPumpStats *pumpStats);
+
+int DLLEXPORT swmm_getSubcatchStats(int index, TSubcatchStats *subcatchStats);
+
+int DLLEXPORT swmm_getSystemRoutingStats(TRoutingTotals *routingTot);
+int DLLEXPORT swmm_getSystemRunoffStats(TRunoffTotals *runoffTot);
 
 //-------------------------------
 // Setters API

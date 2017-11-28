@@ -26,7 +26,7 @@
 //-----------------------------------------------------------------------------
 #define _CRT_SECURE_NO_DEPRECATE
 
-#include <malloc.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "headers.h"
@@ -288,7 +288,6 @@ void node_setOldHydState(int j)
 //
 {
     Node[j].oldDepth    = Node[j].newDepth;
-    Node[j].oldLatFlow  = Node[j].newLatFlow;
     Node[j].oldVolume   = Node[j].newVolume;
 }
 

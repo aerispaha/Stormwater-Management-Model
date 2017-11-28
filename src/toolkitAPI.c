@@ -9,6 +9,8 @@
 //   Exportable Functions for Project Definition API.
 //
 //-----------------------------------------------------------------------------
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,58 +25,58 @@
 //-----------------------------------------------------------------------------
 //  Extended API Functions
 //-----------------------------------------------------------------------------
-void DLLEXPORT swmm_getError(int errcode, char *s)
+void DLLEXPORT swmm_getAPIError(int errcode, char *s)
 //
 // Input: 	errcode = error code
 // Output: 	errmessage String 
+// Return:  API Error
 // Purpose: Get an error message
 {
 	char *errmsg = error_getMsg(errcode);
 	strcpy(s, errmsg);
 }
 
-int DLLEXPORT swmm_getSimulationDateTime(int timetype, char *dtimestr)
+int DLLEXPORT swmm_getSimulationDateTime(int timetype, int *year, int *month, int *day,
+	                                     int *hours, int *minutes, int *seconds)
 //
 // Input: 	timetype = time type to return
-// Output: 	DateTime String 
+// Output: 	year, month, day, hours, minutes, seconds = int
+// Return:  API Error
 // Purpose: Get the simulation start, end and report date times
 {
-	
+	int errcode = 0;
 	// Check if Open
-	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
-	
-	char     theDate[12];
-    char     theTime[9];
-	char     _DTimeStr[22];
-	DateTime _dtime;
-	strcpy(dtimestr, "");
-	
-	switch(timetype)
+	if (swmm_IsOpenFlag() == FALSE)
 	{
-		//StartDateTime (globals.h)
-		case 0: _dtime = StartDateTime; break;
-		//EndDateTime (globals.h)
-		case 1: _dtime = EndDateTime;  break;
-		//ReportStart (globals.h)
-		case 2: _dtime = ReportStart;  break;
-		default: return(ERR_API_OUTBOUNDS);
+		errcode = ERR_API_INPUTNOTOPEN;
 	}
-	datetime_dateToStr(_dtime, theDate);
-	datetime_timeToStr(_dtime, theTime);
+	else
+	{
+		DateTime _dtime;
+		switch (timetype)
+		{
+			//StartDateTime (globals.h)
+		case 0: _dtime = StartDateTime; break;
+			//EndDateTime (globals.h)
+		case 1: _dtime = EndDateTime;  break;
+			//ReportStart (globals.h)
+		case 2: _dtime = ReportStart;  break;
+			//Current Routing Time
+		case 3: _dtime = NewRoutingTime; break;
+		default: return(ERR_API_OUTBOUNDS);
+		}
+		datetime_decodeDate(_dtime, year, month, day);
+		datetime_decodeTime(_dtime, hours, minutes, seconds);
+	}
 
-	strcpy(_DTimeStr, theDate);
-	strcat(_DTimeStr, " ");
-	strcat(_DTimeStr, theTime);
-	
-	strcpy(dtimestr, _DTimeStr);
-	
-	return (0);
+	return (errcode);
 }
 
 int DLLEXPORT swmm_setSimulationDateTime(int timetype, char *dtimestr)
 //
 // Input: 	timetype = time type to return
 //          DateTime String 
+// Return:  API Error
 // Purpose: Get the simulation start, end and report date times
 {
 	// Check if Open
@@ -124,7 +126,7 @@ int DLLEXPORT  swmm_getSimulationUnit(int type, int *value)
 //
 // Input: 	type = simulation unit type
 // Output: 	enum representation of units
-// Returns: error code
+// Returns: API Error
 // Purpose: get simulation unit types
 {
 	// Check if Open
@@ -150,7 +152,7 @@ int DLLEXPORT  swmm_getSimulationAnalysisSetting(int type, int *value)
 //
 // Input: 	type = analysis type
 // Output: 	setting True or False
-// Returns: error code
+// Returns: API Error
 // Purpose: get simulation analysis setting
 {
 	// Check if Open
@@ -232,8 +234,8 @@ int DLLEXPORT  swmm_getSimulationParam(int type, double *value)
 int DLLEXPORT  swmm_countObjects(int type, int *count)
 //
 // Input: 	type = object type (Based on ObjectType enum)
-//			count = pointer to integer
-// Output: 	returns API Error
+// Output: 	count = pointer to integer
+// Returns: API Error
 // Purpose: uses Object Count table to find number of elements of an object
 {	
 	if(type >= MAX_OBJ_TYPES)return ERR_API_OUTBOUNDS;
@@ -245,8 +247,8 @@ int DLLEXPORT swmm_getObjectId(int type, int index, char *id)
 //
 // Input: 	type = object type (Based on ObjectType enum)
 //			index = Index of desired ID
-//			id = pointer to id pass by reference
-// Output: 	returns API Error
+// Output: 	id = pointer to id pass by reference
+// Return:  API Error
 // Purpose: Gets ID for any object
 {
 	//Provide Empty Character Array 
@@ -255,7 +257,7 @@ int DLLEXPORT swmm_getObjectId(int type, int index, char *id)
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[type]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[type]) return(ERR_API_OBJECT_INDEX);
 	switch (type)
 	{
 		case GAGE:
@@ -300,13 +302,13 @@ int DLLEXPORT swmm_getNodeType(int index, int *Ntype)
 //
 // Input: 	index = Index of desired ID
 //			Ntype = Node type (Based on enum NodeType)
-// Output: 	returns API Error
+// Return:  API Error
 // Purpose: Gets Node Type
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OBJECT_INDEX);
 	*Ntype = Node[index].type;
 	return(0);
 }
@@ -315,13 +317,13 @@ int DLLEXPORT swmm_getLinkType(int index, int *Ltype)
 //
 // Input: 	index = Index of desired ID
 //			Ltype = Link type (Based on enum NodeType)
-// Output: 	returns API Error
+// Return:  API Error
 // Purpose: Gets Link Type
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OBJECT_INDEX);
 	*Ltype = Link[index].type;
 	return(0);
 }
@@ -331,12 +333,13 @@ int DLLEXPORT swmm_getLinkConnections(int index, int *Node1, int *Node2)
 // Input: 	type = object type (Based on ObjectType enum)
 //			index = Index of desired ID
 // Output: 	Node1 and Node2
+// Return:  API Error
 // Purpose: Gets link Connection ID Indeces
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OBJECT_INDEX);
 	*Node1 = Link[index].node1;
 	*Node2 = Link[index].node2;
 	return(0);
@@ -347,12 +350,13 @@ int DLLEXPORT swmm_getNodeParam(int index, int Param, double *value)
 // Input: 	index = Index of desired ID
 //			param = Parameter desired (Perhaps define enum )
 // Output: 	value = value to be output
+// Return:  API Error
 // Purpose: Gets Node Parameter
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OBJECT_INDEX);
 	
 	switch(Param)
 	{
@@ -377,6 +381,7 @@ int DLLEXPORT swmm_setNodeParam(int index, int Param, double value)
 // Input: 	index = Index of desired ID
 //			param = Parameter desired (Perhaps define enum )
 //          value = value to be input
+// Return:  API Error
 // Purpose: Sets Node Parameter
 {
 	// Check if Open
@@ -384,7 +389,7 @@ int DLLEXPORT swmm_setNodeParam(int index, int Param, double value)
 	// Check if Simulation is Running
 	if(swmm_IsStartedFlag() == TRUE) return(ERR_API_SIM_NRUNNING);
 	// Check if object index is within bounds	
-	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OBJECT_INDEX);
 	
 	switch(Param)
 	{
@@ -412,12 +417,13 @@ int DLLEXPORT swmm_getLinkParam(int index, int Param, double *value)
 // Input: 	index = Index of desired ID
 //			param = Parameter desired (Perhaps define enum )
 // Output: 	value = value to be output
+// Return:  API Error
 // Purpose: Gets Link Parameter
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OBJECT_INDEX);
 	
 	switch(Param)
 	{
@@ -448,13 +454,13 @@ int DLLEXPORT swmm_setLinkParam(int index, int Param, double value)
 // Input: 	index = Index of desired ID
 //			param = Parameter desired (Perhaps define enum )
 //			value = value to be input
-// Output: 	returns API Error
+// Return:  API Error
 // Purpose: Gets Link Parameter
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OBJECT_INDEX);
 	
 	switch(Param)
 	{
@@ -496,12 +502,13 @@ int DLLEXPORT swmm_getLinkDirection(int index, signed char *value)
 //
 // Input: 	index = Index of desired ID
 // Output: 	Link Direction (Only changes is slope < 0)
+// Return:  API Error
 // Purpose: Gets Link Direction
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 		// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OBJECT_INDEX);
 	*value = Link[index].direction;
 	return(0);
 }
@@ -513,12 +520,13 @@ int DLLEXPORT swmm_getSubcatchParam(int index, int Param, double *value)
 // Input: 	index = Index of desired ID
 //			param = Parameter desired (Perhaps define enum )
 // Output: 	value = value to be output
+// Return:  API Error
 // Purpose: Gets Subcatchment Parameter
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 		// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OBJECT_INDEX);
 	
 	switch(Param)
 	{
@@ -545,6 +553,7 @@ int DLLEXPORT swmm_setSubcatchParam(int index, int Param, double value)
 // Input: 	index = Index of desired ID
 //			param = Parameter desired (Perhaps define enum )
 //          value = value to be output
+// Return:  API Error
 // Purpose: Sets Subcatchment Parameter
 {
 	// Check if Open
@@ -552,7 +561,7 @@ int DLLEXPORT swmm_setSubcatchParam(int index, int Param, double value)
 	// Check if Simulation is Running
 	if(swmm_IsStartedFlag() == TRUE) return(ERR_API_SIM_NRUNNING);
 	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OBJECT_INDEX);
 	
 	switch(Param)
 	{
@@ -582,12 +591,13 @@ int DLLEXPORT swmm_getSubcatchOutConnection(int index, int *type, int *Index )
 // Input: 	type = object type (Based on ObjectType enum) (Subcatchments can load to Node or another Subcatchment)
 //			index = Index of desired ID
 // Output: 	Node1 and Node2
+// Return:  API Error
 // Purpose: Gets Subcatchment Connection ID Indeces for either Node or Subcatchment
 {
 	// Check if Open
 	if(swmm_IsOpenFlag() == FALSE) return(ERR_API_INPUTNOTOPEN);
 		// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OBJECT_INDEX);
 	
 	if (Subcatch[index].outNode == -1 && Subcatch[index].outSubcatch == -1)
 	{
@@ -608,6 +618,7 @@ int DLLEXPORT swmm_getSubcatchOutConnection(int index, int *type, int *Index )
 	return(0);
 } 
 
+
 //-------------------------------
 // Active Simulation Results API
 //-------------------------------
@@ -615,6 +626,7 @@ int DLLEXPORT swmm_getSubcatchOutConnection(int index, int *type, int *Index )
 int DLLEXPORT swmm_getCurrentDateTimeStr(char *dtimestr)
 //
 // Output: 	DateTime String 
+// Return:  API Error
 // Purpose: Get the current simulation time
 {
 	// Check if Simulation is Running
@@ -648,13 +660,13 @@ int DLLEXPORT swmm_getNodeResult(int index, int type, double *result)
 // Input: 	index = Index of desired ID	
 //			type = Result Type
 // Output: 	result = result data desired (byref)
-// Return: 	
+// Return: 	API Error
 // Purpose: Gets Node Simulated Value
 {
 	// Check if Simulation is Running
 	if(swmm_IsStartedFlag() == FALSE) return(ERR_API_SIM_NRUNNING);
 		// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OBJECT_INDEX);
 	
 	switch (type)
 	{
@@ -685,13 +697,13 @@ int DLLEXPORT swmm_getLinkResult(int index, int type, double *result)
 // Input: 	index = Index of desired ID	
 //			type = Result Type
 // Output: 	result = result data desired (byref)
-// Return: 	
+// Return: 	API Error
 // Purpose: Gets Node Simulated Value
 {
 	// Check if Simulation is Running
 	if(swmm_IsStartedFlag() == FALSE) return(ERR_API_SIM_NRUNNING);
 		// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OBJECT_INDEX);
 	
 	switch (type)
 	{
@@ -722,13 +734,13 @@ int DLLEXPORT swmm_getSubcatchResult(int index, int type, double *result)
 // Input: 	index = Index of desired ID	
 //			type = Result Type
 // Output: 	result = result data desired (byref)
-// Return: 	
+// Return: 	API Error
 // Purpose: Gets Node Simulated Value
 {
 	// Check if Simulation is Running
 	if(swmm_IsStartedFlag() == FALSE) return(ERR_API_SIM_NRUNNING);
 	// Check if object index is within bounds	
-	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OUTBOUNDS);
+	if (index < 0 || index >= Nobjects[SUBCATCH]) return(ERR_API_OBJECT_INDEX);
 	
 	switch (type)
 	{
@@ -751,7 +763,277 @@ int DLLEXPORT swmm_getSubcatchResult(int index, int type, double *result)
 }
 
 
+int DLLEXPORT swmm_getNodeStats(int index, TNodeStats *nodeStats)
+//
+// Output: 	Node Stats Structure (TNodeStats)
+// Return: 	API Error
+// Purpose: Gets Node Stats and Converts Units 
+{
+	int errorcode = stats_getNodeStat(index, nodeStats);
+	
+	if (errorcode == 0)
+	{
+		// Current Average Depth
+		nodeStats->avgDepth *= (UCF(LENGTH) / StepCount);
+		// Current Maximum Depth
+		nodeStats->maxDepth *= UCF(LENGTH);
+		// Current Maximum Lateral Inflow
+		nodeStats->maxLatFlow *= UCF(FLOW);
+		// Current Maximum Inflow
+		nodeStats->maxInflow *= UCF(FLOW);
+		// Cumulative Lateral Inflow
+		nodeStats->totLatFlow *= UCF(VOLUME);
+		// Time Courant Critical (hrs)
+		nodeStats->timeCourantCritical /= 3600.0;
+		// Cumulative Flooded Volume
+		nodeStats->volFlooded *= UCF(VOLUME);
+		// Time Flooded (hrs)
+		nodeStats->timeFlooded /= 3600.0;
+		// Current Maximum Overflow
+		nodeStats->maxOverflow *= UCF(FLOW);
+		// Current Maximum Ponding Volume
+		nodeStats->maxPondedVol *= UCF(VOLUME);
+		// Time Surcharged 
+		nodeStats->timeSurcharged /= 3600.0;
+	}
+	
+	return (errorcode);
+}
 
+int DLLEXPORT swmm_getStorageStats(int index, TStorageStats *storageStats)
+//
+// Output: 	Storage Node Stats Structure (TStorageStats)
+// Return: 	API Error
+// Purpose: Gets Storage Node Stats and Converts Units 
+{
+	int errorcode = stats_getStorageStat(index, storageStats);
+	
+	if (errorcode == 0)
+	{
+		// Initial Volume
+		storageStats->initVol *= UCF(VOLUME);
+		// Current Average Volume
+		storageStats->avgVol *= (UCF(VOLUME) / StepCount);
+		// Current Maximum Volume
+		storageStats->maxVol *= UCF(VOLUME);
+		// Current Maximum Flow
+		storageStats->maxFlow *= UCF(FLOW);
+		// Current Evaporation Volume
+		storageStats->evapLosses *= UCF(VOLUME);
+		// Current Exfiltration Volume
+		storageStats->exfilLosses *= UCF(VOLUME);
+	}
+	
+	return (errorcode);	
+}
+
+int DLLEXPORT swmm_getOutfallStats(int index, TOutfallStats *outfallStats)
+//
+// Output: 	Outfall Stats Structure (TOutfallStats)
+// Return: 	API Error
+// Purpose: Gets Outfall Node Stats and Converts Units 
+// Note:    Caller is responsible for calling swmm_freeOutfallStats
+//          to free the pollutants array.
+{
+	int p;
+	int errorcode = stats_getOutfallStat(index, outfallStats);
+
+	if (errorcode == 0)
+	{
+		// Current Average Flow
+		outfallStats->avgFlow *= (UCF(FLOW) / StepCount);
+		// Current Maximum Flow
+		outfallStats->maxFlow *= UCF(FLOW);
+		// Convert Mass Units
+		if (Nobjects[POLLUT] > 0)
+		{
+			for (p = 0; p < Nobjects[POLLUT]; p++)
+				outfallStats->totalLoad[p] *= (LperFT3 * Pollut[p].mcf);
+				if (Pollut[p].units == COUNT)
+				{
+					outfallStats->totalLoad[p] = LOG10(outfallStats->totalLoad[p]);
+				}
+		}
+	}
+	
+	return (errorcode);	
+}
+
+void DLLEXPORT swmm_freeOutfallStats(TOutfallStats *outfallStats)
+//
+// Return: 	API Error
+// Purpose: Frees Outfall Node Stats and Converts Units 
+// Note:    API user is responsible for calling swmm_freeOutfallStats
+//          since this function performs a memory allocation.
+{
+	FREE(outfallStats->totalLoad);
+}
+
+
+
+int DLLEXPORT swmm_getLinkStats(int index, TLinkStats *linkStats)
+//
+// Output: 	Link Stats Structure (TLinkStats)
+// Return: 	API Error
+// Purpose: Gets Link Stats and Converts Units 
+{
+	int errorcode = stats_getLinkStat(index, linkStats);
+	
+	if (errorcode == 0)
+	{
+		// Cumulative Maximum Flowrate
+		linkStats->maxFlow *= UCF(FLOW);
+		// Cumulative Maximum Velocity
+		linkStats->maxVeloc *= UCF(LENGTH);
+		// Cumulative Maximum Depth
+		linkStats->maxDepth *= UCF(LENGTH);
+		// Cumulative Time Normal Flow
+		linkStats->timeNormalFlow /= 3600.0;
+		// Cumulative Time Inlet Control
+		linkStats->timeInletControl /= 3600.0;
+		// Cumulative Time Surcharged
+		linkStats->timeSurcharged /= 3600.0;
+		// Cumulative Time Upstream Full
+		linkStats->timeFullUpstream /= 3600.0;
+		// Cumulative Time Downstream Full
+		linkStats->timeFullDnstream /= 3600.0;
+		// Cumulative Time Full Flow
+		linkStats->timeFullFlow /= 3600.0;
+		// Cumulative Time Capacity limited
+		linkStats->timeCapacityLimited /= 3600.0;
+		// Cumulative Time Courant Critical Flow
+		linkStats->timeCourantCritical /= 3600.0;
+	}
+	
+	return (errorcode);	
+}
+
+
+int DLLEXPORT swmm_getPumpStats(int index, TPumpStats *pumpStats)
+//
+// Output: 	Pump Link Stats Structure (TPumpStats)
+// Return: 	API Error
+// Purpose: Gets Pump Link Stats and Converts Units 
+{
+	int errorcode = stats_getPumpStat(index, pumpStats);
+
+	if (errorcode == 0)
+	{
+		// Cumulative Minimum Flow
+		pumpStats->minFlow *= UCF(FLOW);
+		// Cumulative Average Flow
+		pumpStats->avgFlow *= (UCF(FLOW) / StepCount);
+		// Cumulative Maximum Flow
+		pumpStats->maxFlow *= UCF(FLOW);
+		// Cumulative Pumping Volume
+		pumpStats->volume *= UCF(VOLUME);
+	}
+	
+	return (errorcode);	
+}
+
+
+
+int DLLEXPORT swmm_getSubcatchStats(int index, TSubcatchStats *subcatchStats)
+//
+// Output: 	Subcatchment Stats Structure (TSubcatchStats)
+// Return: 	API Error
+// Purpose: Gets Subcatchment Stats and Converts Units 
+{
+	int errorcode = stats_getSubcatchStat(index, subcatchStats);
+	
+	if (errorcode == 0)
+	{
+		double a = Subcatch[index].area;
+
+		// Cumulative Runon Volume
+		subcatchStats->runon *= (UCF(RAINDEPTH) / a);
+		// Cumulative Infiltration Volume
+		subcatchStats->infil *= (UCF(RAINDEPTH) / a);
+		// Cumulative Runoff Volume
+		subcatchStats->runoff *= (UCF(RAINDEPTH) / a);
+		// Maximum Runoff Rate
+		subcatchStats->maxFlow *= UCF(FLOW);
+		// Cumulative Rainfall Depth
+		subcatchStats->precip *= (UCF(RAINDEPTH) / a);
+		// Cumulative Evaporation Volume
+		subcatchStats->evap *= (UCF(RAINDEPTH) / a);
+	}
+	
+	return (errorcode);		
+}
+
+
+int DLLEXPORT swmm_getSystemRoutingStats(TRoutingTotals *routingTot)
+//
+// Output: 	System Routing Totals Structure (TRoutingTotals)
+// Return: 	API Error
+// Purpose: Gets System Flow Routing Totals and Converts Units 
+{
+	int errorcode = massbal_getRoutingFlowTotal(routingTot);
+
+	if (errorcode == 0)
+	{
+		// Cumulative Dry Weather Inflow Volume
+		routingTot->dwInflow *= UCF(VOLUME);
+		// Cumulative Wet Weather Inflow Volume
+		routingTot->wwInflow *= UCF(VOLUME);
+		// Cumulative Groundwater Inflow Volume
+		routingTot->gwInflow *= UCF(VOLUME);
+		// Cumulative I&I Inflow Volume
+		routingTot->iiInflow *= UCF(VOLUME);
+		// Cumulative External Inflow Volume
+		routingTot->exInflow *= UCF(VOLUME);
+		// Cumulative Flooding Volume
+		routingTot->flooding *= UCF(VOLUME);
+		// Cumulative Outflow Volume
+		routingTot->outflow  *= UCF(VOLUME);
+		// Cumulative Evaporation Loss
+		routingTot->evapLoss *= UCF(VOLUME);
+		// Cumulative Seepage Loss
+		routingTot->seepLoss *= UCF(VOLUME);
+		// Continuity Error
+		routingTot->pctError *= 100;
+	}
+	
+	return(errorcode);
+}
+
+int DLLEXPORT swmm_getSystemRunoffStats(TRunoffTotals *runoffTot)
+//
+// Output: 	System Runoff Totals Structure (TRunoffTotals)
+// Return: 	API Error
+// Purpose: Gets System Runoff Totals and Converts Units
+{
+	int errorcode =  massbal_getRunoffTotal(runoffTot);
+
+	if (errorcode == 0)
+	{
+		double TotalArea = massbal_getTotalArea();
+		// Cumulative Rainfall Volume
+		runoffTot->rainfall *= (UCF(RAINDEPTH) / TotalArea);
+		// Cumulative Evaporation Volume
+		runoffTot->evap *= (UCF(RAINDEPTH) / TotalArea);
+		// Cumulative Infiltration Volume
+		runoffTot->infil *= (UCF(RAINDEPTH) / TotalArea);
+		// Cumulative Runoff Volume
+		runoffTot->runoff *= (UCF(RAINDEPTH) / TotalArea);
+		// Cumulative Runon Volume
+		runoffTot->runon *= (UCF(RAINDEPTH) / TotalArea);
+		// Cumulative Drain Volume
+		runoffTot->drains *= (UCF(RAINDEPTH) / TotalArea);
+		// Cumulative Snow Removed Volume
+		runoffTot->snowRemoved *= (UCF(RAINDEPTH) / TotalArea);
+		// Initial Storage Volume
+		runoffTot->initStorage *= (UCF(RAINDEPTH) / TotalArea);
+		// Initial Snow Cover Volume
+		runoffTot->initSnowCover *= (UCF(RAINDEPTH) / TotalArea);
+		// Continuity Error
+		runoffTot->pctError *= 100;
+	}
+
+	return(errorcode);
+}
 
 
 //-------------------------------
@@ -765,22 +1047,24 @@ int DLLEXPORT swmm_setLinkSetting(int index, double targetSetting)
 // Output: 	returns API Error
 // Purpose: Sets Link open fraction (Weir, Orifice, Pump, and Outlet)
 {
+	int errcode = 0;
 	// Check if Simulation is Running
-	if(swmm_IsStartedFlag() == FALSE) return(ERR_API_SIM_NRUNNING);
-	// Check if object index is within bounds	
-	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OUTBOUNDS);
-	
-	int l_type, errcode;
+	if (swmm_IsStartedFlag() == FALSE)
+	{
+		errcode = ERR_API_SIM_NRUNNING;
+	}
+	// Check if object index is within bounds
+	if (index < 0 || index >= Nobjects[LINK]) return(ERR_API_OBJECT_INDEX);
 	
 	// Get Link Type
 	// errcode = swmm_getLinkType(index, &l_type);
 	// WEIR, ORIFICES, PUMPS can have any value between [0,1]
 	// CONDUIT can be only 0 or 1 * BEM 11/4/2016 investigate this...	
-	
-	Link[index].targetSetting  = targetSetting; 
+
+	Link[index].targetSetting = targetSetting;
 	// Use internal function to apply the new setting
 	link_setSetting(index, 0.0);
-	
+
 	// Add control action to RPT file if desired flagged
 	if (RptFlags.controls)
 	{
@@ -789,7 +1073,7 @@ int DLLEXPORT swmm_setLinkSetting(int index, double targetSetting)
 		char _rule_[11] = "ToolkitAPI";
 		report_writeControlAction(currentTime, Link[index].ID, targetSetting, _rule_);
 	}
-	return(0);
+	return(errcode);
 }
 
 
@@ -800,41 +1084,52 @@ int DLLEXPORT swmm_setNodeInflow(int index, double flowrate)
 // Output: 	returns API Error
 // Purpose: Sets new node inflow rate and holds until set again
 {
-	// Check if Simulation is Running
-	if(swmm_IsStartedFlag() == FALSE) return(ERR_API_SIM_NRUNNING);
-	// Check if object index is within bounds
-	if (index < 0 || index >= Nobjects[NODE]) return(ERR_API_OUTBOUNDS);
-	
-	// Check to see if node has an assigned inflow object
-	TExtInflow* inflow;
-	inflow = Node[index].extInflow;
-	if (!inflow)
-	{
-		// add inflow object then assign flow rate
-		// nodeID	FLOW	""	FLOW	1.0	1	0   
-		char *line[7];
-		int Ntokens = 7;
-		// Get Node ID
-		
-		swmm_getObjectId(NODE, index, line[0]);
-		// Insert Node ID into line
-		line[1] = "FLOW";
-		line[2] = "";
-		line[3] = "FLOW";
-		line[4] = "1.0";
-		line[5] = "1";
-		line[6] = "0";
-		
-		// Add external inflow to linked list
-		inflow_readExtInflow(line, Ntokens);
-		
-		// Get inflow
-		inflow = Node[index].extInflow;
-	}
+	int errcode = 0;
 
-	// Assign new flow rate
-	inflow -> extIfaceInflow = flowrate;
-	
-	return(0);
+	// Check if object index is within bounds
+	if (index < 0 || index >= Nobjects[NODE])
+	{
+		errcode = ERR_API_OBJECT_INDEX;
+	}
+	else
+	{
+		// Check to see if node has an assigned inflow object
+		TExtInflow* inflow;
+		
+		// --- check if an external inflow object for this constituent already exists
+		inflow = Node[index].extInflow;
+		while (inflow)
+		{
+			if (inflow->param == -1) break;
+			inflow = inflow->next;
+		}
+		
+		if (!inflow)
+		{
+			int param = -1;        // FLOW (-1) or Pollutant Index
+			int type = FLOW_INFLOW;// Type of inflow (FLOW)
+			int tSeries = -1;      // No Time Series
+			int basePat = -1;      // No Base Pattern
+			double cf = 1.0;       // Unit Convert (Converted during validation)
+			double sf = 1.0;       // Scaling Factor
+			double baseline = 0.0; // Baseline Inflow Rate
+			
+			// Initializes Inflow Object
+			errcode = inflow_setExtInflow(index, param, type, tSeries,
+				basePat, cf, baseline, sf);
+
+			// Get The Inflow Object
+			if ( errcode == 0 )
+			{
+				inflow = Node[index].extInflow;
+			}
+		}
+		// Assign new flow rate
+		if ( errcode == 0 )
+		{
+			inflow -> extIfaceInflow = flowrate;
+		}
+	}
+	return(errcode);
 }
 
